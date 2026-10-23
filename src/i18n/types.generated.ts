@@ -5,8 +5,8 @@
  * 직접 수정하지 마세요.
  *
  * 생성 명령: pnpm run generate:i18n-types
- * 생성 시간: 2026-10-22T10:25:51.791Z
- * 총 키 개수: 2358
+ * 생성 시간: 2026-10-23T16:47:42.209Z
+ * 총 키 개수: 2381
  * Namespace 수: 13
  */
 
@@ -1705,7 +1705,7 @@ export type MessageKeys =
   | 'navigator.viewMode.toggle';
 
 /**
- * renderers namespace의 번역 키 (432개)
+ * renderers namespace의 번역 키 (455개)
  * 파일: locales/{lang}/renderers.json
  */
 export type RenderersKeys =
@@ -1956,6 +1956,11 @@ export type RenderersKeys =
   | 'mcpToolResultRenderer.title'
   | 'mcpToolUseRenderer.showInput'
   | 'mcpToolUseRenderer.title'
+  | 'outputBlock.copy'
+  | 'outputBlock.empty'
+  | 'outputBlock.lineCount'
+  | 'outputBlock.showAll'
+  | 'outputBlock.showLess'
   | 'progressRenderer.status.completed'
   | 'progressRenderer.status.error'
   | 'progressRenderer.status.running'
@@ -2122,6 +2127,24 @@ export type RenderersKeys =
   | 'toolError.urlNotAccessible'
   | 'toolError.urlNotAllowed'
   | 'toolError.urlTooLong'
+  | 'toolOutcome.conflict'
+  | 'toolOutcome.errorCode'
+  | 'toolOutcome.exitCode'
+  | 'toolOutcome.failed'
+  | 'toolOutcome.failedErrorCode'
+  | 'toolOutcome.failedExitCode'
+  | 'toolOutcome.interrupted'
+  | 'toolOutcome.noResult'
+  | 'toolOutcome.notVerified'
+  | 'toolOutcome.notVerifiedNoExitCode'
+  | 'toolRow.copyToolId'
+  | 'toolRow.grepModeContent'
+  | 'toolRow.grepModeCount'
+  | 'toolRow.grepModeFiles'
+  | 'toolRow.lineCount'
+  | 'toolRow.linesAdded'
+  | 'toolRow.linesRemoved'
+  | 'toolRow.toolIdCopied'
   | 'toolSearchToolResultRenderer.error'
   | 'toolSearchToolResultRenderer.found'
   | 'toolSearchToolResultRenderer.noResults'
@@ -3574,6 +3597,11 @@ export type TranslationKey =
   | 'navigator.userOnly'
   | 'navigator.viewMode.outline'
   | 'navigator.viewMode.toggle'
+  | 'outputBlock.copy'
+  | 'outputBlock.empty'
+  | 'outputBlock.lineCount'
+  | 'outputBlock.showAll'
+  | 'outputBlock.showLess'
   | 'progressRenderer.status.completed'
   | 'progressRenderer.status.error'
   | 'progressRenderer.status.running'
@@ -4701,6 +4729,16 @@ export type TranslationKey =
   | 'toolError.urlNotAccessible'
   | 'toolError.urlNotAllowed'
   | 'toolError.urlTooLong'
+  | 'toolOutcome.conflict'
+  | 'toolOutcome.errorCode'
+  | 'toolOutcome.exitCode'
+  | 'toolOutcome.failed'
+  | 'toolOutcome.failedErrorCode'
+  | 'toolOutcome.failedExitCode'
+  | 'toolOutcome.interrupted'
+  | 'toolOutcome.noResult'
+  | 'toolOutcome.notVerified'
+  | 'toolOutcome.notVerifiedNoExitCode'
   | 'toolResult.collapse'
   | 'toolResult.completed'
   | 'toolResult.copyCode'
@@ -4726,6 +4764,14 @@ export type TranslationKey =
   | 'toolResult.taskResult'
   | 'toolResult.taskUpdated'
   | 'toolResult.toolExecutionResult'
+  | 'toolRow.copyToolId'
+  | 'toolRow.grepModeContent'
+  | 'toolRow.grepModeCount'
+  | 'toolRow.grepModeFiles'
+  | 'toolRow.lineCount'
+  | 'toolRow.linesAdded'
+  | 'toolRow.linesRemoved'
+  | 'toolRow.toolIdCopied'
   | 'toolSearchToolResultRenderer.error'
   | 'toolSearchToolResultRenderer.found'
   | 'toolSearchToolResultRenderer.noResults'
@@ -4889,6 +4935,7 @@ export type TranslationPrefix =
   | 'messageViewer'
   | 'messages'
   | 'navigator'
+  | 'outputBlock'
   | 'progressRenderer'
   | 'project'
   | 'queueOperationRenderer'
@@ -4917,7 +4964,9 @@ export type TranslationPrefix =
   | 'thinkingRenderer'
   | 'time'
   | 'toolError'
+  | 'toolOutcome'
   | 'toolResult'
+  | 'toolRow'
   | 'toolSearchToolResultRenderer'
   | 'toolUseRenderer'
   | 'tools'

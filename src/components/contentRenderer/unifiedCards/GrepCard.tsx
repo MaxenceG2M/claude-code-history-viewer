@@ -1,51 +1,61 @@
 import { memo } from "react";
-import { Search } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Renderer } from "@/shared/RendererHeader";
+import { useTranslation } from "react-i18next";
 import { ToolIcon } from "../../ToolIcon";
-import { getVariantStyles, layout } from "../../renderers";
+import { CodeTarget, TargetWell, ToolRow } from "../../transcript/ToolRow";
+import { ToolResultOutputs } from "../../transcript/ToolResultOutputs";
+import { toolFamily, toolOutcome } from "../../transcript/toolOutcome";
+import { useToolPathContext } from "../../transcript/pathContext";
+import { PathText } from "@/lib/format/PathText";
 import type { Props } from "./shared";
-import { str, isError, summarizeToolInput } from "./shared";
-import { StatusBadge } from "./StatusBadge";
-import { ResultBlock } from "./ResultBlock";
+import { str } from "./shared";
+
+/** Grep's `output_mode` values, in words (renderer audit TC12). */
+const OUTPUT_MODE_KEYS = {
+  files_with_matches: "toolRow.grepModeFiles",
+  content: "toolRow.grepModeContent",
+  count: "toolRow.grepModeCount",
+} as const;
+
+/** The output mode in words; a mode this list does not know, as recorded (a code literal). */
+function OutputMode({ mode }: { mode: string }) {
+  const { t } = useTranslation();
+  const key = Object.hasOwn(OUTPUT_MODE_KEYS, mode) ? OUTPUT_MODE_KEYS[mode as keyof typeof OUTPUT_MODE_KEYS] : null;
+  return key ? <span>{t(key)}</span> : <code data-mono="code" className="font-mono">{mode}</code>;
+}
 
 export const GrepCard = memo(function GrepCard({ toolUse, toolResults }: Props) {
+  const pathCtx = useToolPathContext();
+  const name = (toolUse.name as string) || "Grep";
+  const toolId = (toolUse.id as string) || "";
   const input = (toolUse.input as Record<string, unknown>) ?? {};
   const pattern = str(input, "pattern") ?? "";
   const path = str(input, "path");
   const glob = str(input, "glob");
   const outputMode = str(input, "output_mode");
-  const styles = getVariantStyles("search");
-
-
-  const scope = path ?? glob ?? "";
+  const family = toolFamily(name);
+  const outcome = toolOutcome(toolUse, toolResults, family);
+  const expandKey = `unified-${toolId}`;
 
   return (
-    <Renderer className={styles.container} hasError={toolResults.length > 0 && toolResults.some(isError)} expandKey={`unified-${(toolUse.id as string) || ""}`}>
-      <Renderer.Header
-        title="Grep"
-        icon={<ToolIcon toolName="Grep" className={cn(layout.iconSize, styles.icon)} />}
-        titleClassName={styles.title}
-        summary={summarizeToolInput(input)}
-        rightContent={
-          <div className={cn("flex items-center gap-2", layout.smallText)}>
-            {outputMode && (
-              <code className={cn(layout.monoText, "text-muted-foreground")}>{outputMode}</code>
-            )}
-            <StatusBadge results={toolResults} />
-          </div>
-        }
-      />
-      <Renderer.Content>
-        <div className={cn("flex items-center gap-2 mb-2 p-2 rounded border", "bg-card border-border")}>
-          <Search className={cn(layout.iconSizeSmall, "text-tool-search shrink-0")} />
-          <code className={cn(layout.monoText, "text-tool-search font-semibold")}>{pattern}</code>
-          {scope && (
-            <span className={cn(layout.smallText, "text-muted-foreground ml-1 truncate")}>in {scope}</span>
-          )}
-        </div>
-        <ResultBlock results={toolResults} />
-      </Renderer.Content>
-    </Renderer>
+    <ToolRow
+      icon={<ToolIcon toolName="Grep" className="w-4 h-4" />}
+      verb={name}
+      target={pattern ? <CodeTarget text={pattern} /> : undefined}
+      meta={
+        <>
+          {path && <PathText path={path} ctx={pathCtx} />}
+          {glob && <span data-mono="code" className="font-mono">{glob}</span>}
+          {outputMode && <OutputMode mode={outputMode} />}
+        </>
+      }
+      outcome={outcome}
+      family={family}
+      toolId={toolId}
+      expandKey={expandKey}
+    >
+      {pattern && <TargetWell text={pattern} />}
+      {/* Content-mode matches are records: one line each, the well scrolls sideways (TC13). */}
+      <ToolResultOutputs results={toolResults} family={family} expandKey={expandKey} failed={outcome.verdict === "failed"} wrap={outputMode !== "content"} />
+    </ToolRow>
   );
 });
