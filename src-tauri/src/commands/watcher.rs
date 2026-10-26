@@ -1196,6 +1196,7 @@ mod tests {
         (vibe_home, legacy_dir, unified_dir)
     }
 
+    /// A legacy `messages.jsonl` path maps to its session.
     #[test]
     #[serial]
     fn test_extract_vibe_paths_legacy_transcript() {
@@ -1222,6 +1223,7 @@ mod tests {
         );
     }
 
+    /// Unified-store files (chunks, manifests, journal) map to their session.
     #[test]
     #[serial]
     fn test_extract_vibe_paths_unified_store() {
@@ -1270,6 +1272,7 @@ mod tests {
         assert!(irrelevant.is_none(), "unrelated session file is ignored");
     }
 
+    /// Files outside the sessions tree are ignored.
     #[test]
     #[serial]
     fn test_extract_vibe_paths_ignores_files_outside_sessions() {

@@ -68,6 +68,8 @@ pub fn get_base_path() -> Option<String> {
     }
 }
 
+/// Scan a Vibe base path and group its sessions into projects by working
+/// directory.
 pub fn scan_projects_from_path(base_path: &str) -> Result<Vec<ClaudeProject>, String> {
     crate::utils::require_absolute_path(base_path, "Vibe base path")?;
     let base = Path::new(base_path);
@@ -127,6 +129,7 @@ pub fn load_sessions(
     load_sessions_from_base_path(&base, project_path, exclude_sidechain)
 }
 
+/// Load the sessions of one project from a Vibe base path.
 pub fn load_sessions_from_base_path(
     base_path: &str,
     project_path: &str,
@@ -176,6 +179,8 @@ pub fn load_messages(session_path: &str) -> Result<Vec<ClaudeMessage>, String> {
     load_messages_from_base_path(&base, session_path)
 }
 
+/// Load one session's messages from a Vibe base path, reading either the
+/// legacy `messages.jsonl` transcript or the unified session store.
 pub fn load_messages_from_base_path(
     base_path: &str,
     session_path: &str,
@@ -295,6 +300,9 @@ fn collect_session_dirs(base: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// A session directory carries `meta.json` plus either the unified store's
+/// `chunks/` directory or the legacy `messages.jsonl` transcript. Symlinks
+/// are rejected so a session never resolves outside the sessions root.
 fn is_session_dir(dir: &Path) -> bool {
     if is_symlink(dir) || !dir.is_dir() {
         return false;
@@ -303,7 +311,8 @@ fn is_session_dir(dir: &Path) -> bool {
     if is_symlink(&metadata) || !metadata.is_file() {
         return false;
     }
-    if dir.join(CHUNKS_DIR).is_dir() {
+    let chunks = dir.join(CHUNKS_DIR);
+    if !is_symlink(&chunks) && chunks.is_dir() {
         return true;
     }
     let messages = dir.join(MESSAGES_FILE);
@@ -319,6 +328,9 @@ fn is_session_dir(dir: &Path) -> bool {
 /// ordered by modification time.
 fn load_history_entries(session_dir: &Path) -> Vec<Value> {
     let chunks_dir = session_dir.join(CHUNKS_DIR);
+    if is_symlink(&chunks_dir) {
+        return Vec::new();
+    }
     let mut entries = Vec::new();
 
     if let Some(hashes) = resolve_checkpoint_chunks(session_dir) {
@@ -352,11 +364,29 @@ fn load_history_entries(session_dir: &Path) -> Vec<Value> {
     entries
 }
 
+/// Chunk hashes and generation names come from store files (`manifest.json`,
+/// `CURRENT`) and are untrusted: only single file-name components are
+/// accepted, so a malformed store cannot make the provider read outside its
+/// session directory.
+fn is_safe_store_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 /// Resolve the ordered checkpoint chunk hashes of the latest generation.
 fn resolve_checkpoint_chunks(session_dir: &Path) -> Option<Vec<String>> {
     let generations = session_dir.join(GENERATIONS_DIR);
+    if is_symlink(&generations) {
+        return None;
+    }
     let generation = current_generation(session_dir)
-        .filter(|name| generations.join(name).join(MANIFEST_FILE).is_file())
+        .filter(|name| is_safe_store_name(name))
+        .filter(|name| {
+            let dir = generations.join(name);
+            !is_symlink(&dir) && dir.join(MANIFEST_FILE).is_file()
+        })
         .or_else(|| latest_generation(&generations))?;
     let manifest = read_json_file(&generations.join(&generation).join(MANIFEST_FILE)).ok()?;
     let chunks: Vec<String> = manifest
@@ -364,7 +394,12 @@ fn resolve_checkpoint_chunks(session_dir: &Path) -> Option<Vec<String>> {
         .get("chunks")?
         .as_array()?
         .iter()
-        .filter_map(|chunk| chunk.as_str().map(str::to_owned))
+        .filter_map(|chunk| {
+            chunk
+                .as_str()
+                .filter(|hash| is_safe_store_name(hash))
+                .map(str::to_owned)
+        })
         .collect();
     if chunks.is_empty() {
         None
@@ -387,6 +422,7 @@ fn latest_generation(generations: &Path) -> Option<String> {
         .flatten()
         .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_dir()))
         .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| is_safe_store_name(name))
         .max()
 }
 
@@ -590,6 +626,8 @@ fn reasoning_text(item: &Value) -> String {
         .unwrap_or_default()
 }
 
+/// Map a Vibe `tool_call` content block to the viewer's `tool_use` block,
+/// preferring the parsed `arguments.value` and falling back to `arguments.raw`.
 fn convert_history_tool_call(call: &Value) -> Value {
     let arguments = call.get("arguments");
     let input = arguments
@@ -628,6 +666,7 @@ fn history_text_content(content: Option<&Value>) -> Value {
     }
 }
 
+/// Per-project totals while scanning a Vibe base path.
 #[derive(Debug, Default)]
 struct ProjectAccumulator {
     session_count: usize,
@@ -636,6 +675,7 @@ struct ProjectAccumulator {
     storage_type: Option<String>,
 }
 
+/// One discovered Vibe session, before it becomes a `ClaudeSession`.
 #[derive(Debug, Clone)]
 struct SessionInfo {
     session_id: String,
@@ -650,6 +690,7 @@ struct SessionInfo {
     storage_type: &'static str,
 }
 
+/// Summary facts extracted from a session's history.
 #[derive(Debug, Default)]
 struct HistorySummary {
     message_count: usize,
@@ -657,6 +698,7 @@ struct HistorySummary {
     first_user_text: Option<String>,
 }
 
+/// Read one session directory's metadata and history summary.
 fn extract_session_info(session_dir: &Path) -> Option<SessionInfo> {
     if is_symlink(session_dir) || !session_dir.is_dir() {
         return None;
@@ -1133,6 +1175,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Build a legacy `messages.jsonl` session fixture with metadata.
     fn write_fixture(base: &Path) -> (String, String) {
         let session_dir = base.join("logs/session/session_20260202_120000_abc123");
         fs::create_dir_all(&session_dir).expect("create session dir");
@@ -1308,6 +1351,7 @@ mod tests {
     }
 
     #[test]
+    /// Legacy sessions group into one project by working directory.
     fn scan_projects_groups_sessions_by_working_directory() {
         let temp = TempDir::new().expect("temp dir");
         let (cwd, _) = write_fixture(temp.path());
@@ -1321,6 +1365,7 @@ mod tests {
     }
 
     #[test]
+    /// Legacy transcripts parse into sessions and viewer messages.
     fn load_sessions_and_messages_parse_openai_format() {
         let temp = TempDir::new().expect("temp dir");
         let (cwd, session_dir) = write_fixture(temp.path());
@@ -1343,6 +1388,7 @@ mod tests {
     }
 
     #[test]
+    /// Unified sessions group into one project by working directory.
     fn scan_projects_groups_unified_sessions_by_working_directory() {
         let temp = TempDir::new().expect("temp dir");
         let (cwd, _) = write_unified_fixture(temp.path());
@@ -1356,6 +1402,7 @@ mod tests {
     }
 
     #[test]
+    /// A unified store parses into a session and its checkpoint-ordered messages.
     fn load_sessions_and_messages_parse_unified_store() {
         let temp = TempDir::new().expect("temp dir");
         let (cwd, session_dir) = write_unified_fixture(temp.path());
@@ -1488,6 +1535,8 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
+    /// `VIBE_HOME` overrides the default `~/.vibe` base path.
     fn get_base_path_honors_vibe_home() {
         let temp = TempDir::new().expect("temp dir");
         let vibe_home = temp.path().join(".vibe");
@@ -1663,5 +1712,210 @@ mod tests {
         assert_eq!(image_blocks[0]["source"]["data"], json!(inline_b64));
         let expected_png = base64::engine::general_purpose::STANDARD.encode(png_bytes);
         assert_eq!(image_blocks[1]["source"]["data"], json!(expected_png));
+    }
+
+    #[test]
+    /// Store names are single path components; separators, `..`, empty and
+    /// absolute names are rejected.
+    fn safe_store_name_rejects_path_components() {
+        assert!(is_safe_store_name("aaa"));
+        assert!(is_safe_store_name("0000000000000042"));
+        assert!(is_safe_store_name("abc-DEF_123"));
+        assert!(!is_safe_store_name(""));
+        assert!(!is_safe_store_name(".."));
+        assert!(!is_safe_store_name("../aaa"));
+        assert!(!is_safe_store_name("aaa/bbb"));
+        assert!(!is_safe_store_name("/etc/passwd"));
+        assert!(!is_safe_store_name("aaa.json"));
+        assert!(!is_safe_store_name("a\\b"));
+    }
+
+    #[test]
+    /// A chunk hash from a manifest must be a single path component: a
+    /// malformed store cannot point the reader at files outside `chunks/`.
+    fn unified_store_rejects_traversal_chunk_hash() {
+        let temp = TempDir::new().expect("temp dir");
+        let session_dir = temp
+            .path()
+            .join("logs/session/unified/session-traversal-chunk");
+        let chunks_dir = session_dir.join(CHUNKS_DIR);
+        let generation_dir = session_dir.join(GENERATIONS_DIR).join("0000000000000001");
+        fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+        fs::create_dir_all(&generation_dir).expect("create generation dir");
+        fs::write(
+            session_dir.join(METADATA_FILE),
+            json!({ "environment": { "working_directory": "/tmp/vibe-traversal" } }).to_string(),
+        )
+        .expect("write metadata");
+        fs::write(
+            session_dir.join(CURRENT_FILE),
+            json!({ "generation": "0000000000000001" }).to_string(),
+        )
+        .expect("write CURRENT");
+        // The traversal target sits inside the session but outside `chunks/`.
+        fs::write(
+            session_dir.join("evil.json"),
+            json!([{ "message": { "role": "user", "content": "from outside chunks" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write outside chunk");
+        fs::write(
+            chunks_dir.join("aaa.json"),
+            json!([{ "message": { "role": "user", "content": "from chunks" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write chunk");
+        fs::write(
+            generation_dir.join(MANIFEST_FILE),
+            json!({ "checkpoint": { "chunks": ["../evil", "aaa"] } }).to_string(),
+        )
+        .expect("write manifest");
+
+        let entries = load_history_entries(&session_dir);
+        assert_eq!(entries.len(), 1, "only the in-store chunk is read");
+        assert_eq!(entries[0]["message"]["content"], json!("from chunks"));
+    }
+
+    #[test]
+    /// A `CURRENT` generation name must be a single path component: a
+    /// malformed store cannot point the reader at a manifest outside
+    /// `generations/`.
+    fn unified_store_rejects_traversal_generation_name() {
+        let temp = TempDir::new().expect("temp dir");
+        let session_dir = temp
+            .path()
+            .join("logs/session/unified/session-traversal-gen");
+        let chunks_dir = session_dir.join(CHUNKS_DIR);
+        let generation_dir = session_dir.join(GENERATIONS_DIR).join("0000000000000001");
+        let escape_dir = session_dir.join("escape");
+        fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+        fs::create_dir_all(&generation_dir).expect("create generation dir");
+        fs::create_dir_all(&escape_dir).expect("create escape dir");
+        fs::write(
+            session_dir.join(METADATA_FILE),
+            json!({ "environment": { "working_directory": "/tmp/vibe-traversal" } }).to_string(),
+        )
+        .expect("write metadata");
+        // `generations/../escape` resolves to `session_dir/escape`.
+        fs::write(
+            session_dir.join(CURRENT_FILE),
+            json!({ "generation": "../escape" }).to_string(),
+        )
+        .expect("write CURRENT");
+        fs::write(
+            chunks_dir.join("aaa.json"),
+            json!([{ "message": { "role": "user", "content": "from gen 1" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write chunk a");
+        fs::write(
+            chunks_dir.join("bbb.json"),
+            json!([{ "message": { "role": "user", "content": "from escape" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write chunk b");
+        fs::write(
+            generation_dir.join(MANIFEST_FILE),
+            json!({ "checkpoint": { "chunks": ["aaa"] } }).to_string(),
+        )
+        .expect("write generation manifest");
+        fs::write(
+            escape_dir.join(MANIFEST_FILE),
+            json!({ "checkpoint": { "chunks": ["bbb"] } }).to_string(),
+        )
+        .expect("write escape manifest");
+
+        let entries = load_history_entries(&session_dir);
+        assert_eq!(entries.len(), 1, "the escaped manifest is not read");
+        assert_eq!(entries[0]["message"]["content"], json!("from gen 1"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    /// A symlinked `chunks/` directory is rejected at discovery and at load,
+    /// not followed.
+    fn unified_store_rejects_symlinked_chunks_dir() {
+        use std::os::unix::fs as unix_fs;
+
+        let temp = TempDir::new().expect("temp dir");
+        let session_dir = temp
+            .path()
+            .join("logs/session/unified/session-symlink-chunks");
+        fs::create_dir_all(&session_dir).expect("create session dir");
+        fs::write(
+            session_dir.join(METADATA_FILE),
+            json!({ "environment": { "working_directory": "/tmp/vibe-symlink" } }).to_string(),
+        )
+        .expect("write metadata");
+        let outside = temp.path().join("outside-chunks");
+        fs::create_dir_all(&outside).expect("create outside dir");
+        fs::write(
+            outside.join("aaa.json"),
+            json!([{ "message": { "role": "user", "content": "from outside" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write outside chunk");
+        unix_fs::symlink(&outside, session_dir.join(CHUNKS_DIR)).expect("symlink chunks dir");
+
+        assert!(
+            !is_session_dir(&session_dir),
+            "discovery rejects the symlink"
+        );
+        assert!(
+            load_history_entries(&session_dir).is_empty(),
+            "load rejects the symlink"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    /// A symlinked `generations/` directory is rejected, not followed: the
+    /// manifest outside the session is never read.
+    fn unified_store_rejects_symlinked_generations_dir() {
+        use std::os::unix::fs as unix_fs;
+
+        let temp = TempDir::new().expect("temp dir");
+        let session_dir = temp.path().join("logs/session/unified/session-symlink-gen");
+        let chunks_dir = session_dir.join(CHUNKS_DIR);
+        fs::create_dir_all(&chunks_dir).expect("create chunks dir");
+        fs::write(
+            session_dir.join(METADATA_FILE),
+            json!({ "environment": { "working_directory": "/tmp/vibe-symlink" } }).to_string(),
+        )
+        .expect("write metadata");
+        fs::write(
+            session_dir.join(CURRENT_FILE),
+            json!({ "generation": "0000000000000009" }).to_string(),
+        )
+        .expect("write CURRENT");
+        fs::write(
+            chunks_dir.join("aaa.json"),
+            json!([{ "message": { "role": "user", "content": "chunk a" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write chunk a");
+        fs::write(
+            chunks_dir.join("bbb.json"),
+            json!([{ "message": { "role": "user", "content": "chunk b" }, "source": "history" }])
+                .to_string(),
+        )
+        .expect("write chunk b");
+        let outside = temp.path().join("outside-generations/0000000000000009");
+        fs::create_dir_all(&outside).expect("create outside generation");
+        fs::write(
+            outside.join(MANIFEST_FILE),
+            json!({ "checkpoint": { "chunks": ["bbb"] } }).to_string(),
+        )
+        .expect("write outside manifest");
+        unix_fs::symlink(outside.parent().unwrap(), session_dir.join(GENERATIONS_DIR))
+            .expect("symlink generations dir");
+
+        assert!(
+            resolve_checkpoint_chunks(&session_dir).is_none(),
+            "the outside manifest is not resolved"
+        );
+        // The load falls back to the real `chunks/` directory.
+        let entries = load_history_entries(&session_dir);
+        assert_eq!(entries.len(), 2, "both real chunks load, in mtime order");
     }
 }
